@@ -16,7 +16,7 @@
     <Company>grant</Company>
     <Copyright>Copyright © 2026 Grant Stannard</Copyright>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
-    <RepositoryUrl>https://git.grantstannard.com/gstannard/jellyfin-plugin-anilist-scrobbler</RepositoryUrl>
+    <RepositoryUrl>https://git.grantstannard.com/gstannard/anilist-scrobber</RepositoryUrl>
   </PropertyGroup>
 
 </Project>

@@ -43,7 +43,7 @@ cat > "$out/manifest-fragment.json" <<JSON
   "version": "${version}.0",
   "changelog": "See the repository releases.",
   "targetAbi": "10.11.0.0",
-  "sourceUrl": "https://git.grantstannard.com/gstannard/jellyfin-plugin-anilist-scrobbler/releases/download/v${version}/${zip_name}",
+  "sourceUrl": "https://git.grantstannard.com/gstannard/anilist-scrobber/releases/download/v${version}/${zip_name}",
   "checksum": "${checksum}",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
