@@ -1,0 +1,26 @@
+# Packages the plugin into the zip Jellyfin expects and attaches it to a tag.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Package
+        run: ./scripts/package.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jellyfin-plugin-anilist-scrobbler
+          path: artifacts/*.zip

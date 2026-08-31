@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>AniList Scrobbler</title>
+</head>
+<body>
+<div id="AniListScrobblerConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="AniListScrobblerConfigForm">
+
+                <h2>Account</h2>
+
+                <div class="selectContainer">
+                    <label class="selectLabel" for="JellyfinUser">Jellyfin user</label>
+                    <select is="emby-select" id="JellyfinUser" class="emby-select-withcolor emby-select"></select>
+                    <div class="fieldDescription">
+                        Each Jellyfin user links their own AniList account. Settings below apply
+                        to the selected user.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="AccessToken">AniList access token</label>
+                    <input is="emby-input" type="password" id="AccessToken" autocomplete="off" />
+                    <div class="fieldDescription">
+                        Paste a token, or use the authorize link below to get one.
+                        <span id="LinkedAs"></span>
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="button" id="ValidateToken" class="raised button-submit block">
+                        <span>Check token</span>
+                    </button>
+                </div>
+
+                <br />
+                <details>
+                    <summary>Getting a token</summary>
+                    <div style="margin-top:1em">
+                        <p>
+                            Create an API client at
+                            <a is="emby-linkbutton" class="button-link" href="https://anilist.co/settings/developer" target="_blank" rel="noopener">anilist.co/settings/developer</a>.
+                            Set the redirect URL to <code>https://anilist.co/api/v2/oauth/pin</code>
+                            and copy the client id and secret here.
+                        </p>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="ClientId">Client id</label>
+                            <input is="emby-input" type="text" id="ClientId" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="ClientSecret">Client secret</label>
+                            <input is="emby-input" type="password" id="ClientSecret" autocomplete="off" />
+                        </div>
+
+                        <p>
+                            Save, then open the
+                            <a id="AuthorizeLink" is="emby-linkbutton" class="button-link" href="#" target="_blank" rel="noopener">authorization page</a>,
+                            approve access, and paste the PIN below.
+                        </p>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="AuthCode">Authorization PIN</label>
+                            <input is="emby-input" type="text" id="AuthCode" autocomplete="off" />
+                        </div>
+
+                        <button is="emby-button" type="button" id="ExchangeCode" class="raised block">
+                            <span>Exchange PIN for a token</span>
+                        </button>
+                    </div>
+                </details>
+
+                <h2>Scrobbling</h2>
+
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="ScrobbleEnabled" />
+                    <span>Scrobble this user's playback to AniList</span>
+                </label>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="MinimumPlayedPercentage">Watched threshold (%)</label>
+                    <input is="emby-input" type="number" id="MinimumPlayedPercentage" min="1" max="100" />
+                    <div class="fieldDescription">
+                        How much of an episode must play before it counts as watched.
+                    </div>
+                </div>
+
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="ScrobbleOnManualMarkPlayed" />
+                    <span>Also scrobble when an episode is marked played by hand</span>
+                </label>
+
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="ScrobbleMovies" />
+                    <span>Scrobble anime films</span>
+                </label>
+
+                <div class="selectContainer">
+                    <label class="selectLabel" for="Libraries">Libraries</label>
+                    <select is="emby-select" id="Libraries" multiple size="6" class="emby-select-withcolor emby-select"></select>
+                    <div class="fieldDescription">
+                        Select nothing to scrobble every library. Hold Ctrl to select several.
+                    </div>
+                </div>
+
+                <h2>Matching</h2>
+
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="EnableIdMappingDatabase" />
+                    <span>Download the AniDB/MyAnimeList to AniList id database</span>
+                </label>
+                <div class="fieldDescription" style="margin-bottom:1em">
+                    Required for libraries whose metadata comes from AniDB or Shoko. The dataset is
+                    fetched from Fribb/anime-lists and cached on the server.
+                </div>
+
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="EnableTitleSearchFallback" />
+                    <span>Fall back to searching AniList by title</span>
+                </label>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TitleSearchMinimumSimilarity">Minimum title similarity</label>
+                    <input is="emby-input" type="number" id="TitleSearchMinimumSimilarity" min="0" max="1" step="0.01" />
+                    <div class="fieldDescription">
+                        Between 0 and 1. Lower accepts looser matches and risks scrobbling the wrong show.
+                    </div>
+                </div>
+
+                <h2>Manual mappings</h2>
+                <div class="fieldDescription" style="margin-bottom:1em">
+                    Pin a Jellyfin series or season to a specific AniList entry. Use the offset when a
+                    library numbers episodes continuously across seasons: a season whose first episode
+                    is numbered 26 in Jellyfin but 1 on AniList needs an offset of 25.
+                </div>
+
+                <table class="tblOrganizeResult detailTable" style="width:100%">
+                    <thead>
+                    <tr>
+                        <th class="detailTableHeaderCell">Jellyfin series/season id</th>
+                        <th class="detailTableHeaderCell">Label</th>
+                        <th class="detailTableHeaderCell">AniList id</th>
+                        <th class="detailTableHeaderCell">Offset</th>
+                        <th class="detailTableHeaderCell"></th>
+                    </tr>
+                    </thead>
+                    <tbody id="MappingRows"></tbody>
+                </table>
+
+                <button is="emby-button" type="button" id="AddMapping" class="raised block">
+                    <span>Add mapping</span>
+                </button>
+
+                <h2>Advanced</h2>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="RequestsPerMinute">AniList requests per minute</label>
+                    <input is="emby-input" type="number" id="RequestsPerMinute" min="1" max="90" />
+                    <div class="fieldDescription">
+                        AniList documents 90/minute but often serves a degraded 30/minute.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="MaxRetryAttempts">Retry attempts</label>
+                    <input is="emby-input" type="number" id="MaxRetryAttempts" min="0" max="10" />
+                </div>
+
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="VerboseLogging" />
+                    <span>Log every scrobble decision</span>
+                </label>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = '7254b521-24ce-4fb9-b8aa-ec40010a3f96';
+            var page;
+            var config;
+            var currentUserId;
+
+            function defaultUser(userId) {
+                return {
+                    JellyfinUserId: userId,
+                    AccessToken: '',
+                    AniListUserName: '',
+                    AniListUserId: 0,
+                    ScrobbleEnabled: true,
+                    MinimumPlayedPercentage: 85,
+                    ScrobbleOnManualMarkPlayed: true,
+                    ScrobbleMovies: true,
+                    LibraryIds: []
+                };
+            }
+
+            function findUser(userId) {
+                var list = config.UserConfigurations || [];
+                for (var i = 0; i < list.length; i++) {
+                    if (list[i].JellyfinUserId === userId) {
+                        return list[i];
+                    }
+                }
+                return null;
+            }
+
+            function loadUserSettings(userId) {
+                var user = findUser(userId) || defaultUser(userId);
+
+                page.querySelector('#AccessToken').value = user.AccessToken || '';
+                page.querySelector('#ScrobbleEnabled').checked = !!user.ScrobbleEnabled;
+                page.querySelector('#MinimumPlayedPercentage').value = user.MinimumPlayedPercentage;
+                page.querySelector('#ScrobbleOnManualMarkPlayed').checked = !!user.ScrobbleOnManualMarkPlayed;
+                page.querySelector('#ScrobbleMovies').checked = !!user.ScrobbleMovies;
+
+                page.querySelector('#LinkedAs').textContent = user.AniListUserName
+                    ? 'Linked as ' + user.AniListUserName + '.'
+                    : '';
+
+                var libraries = page.querySelector('#Libraries');
+                var selected = user.LibraryIds || [];
+                for (var i = 0; i < libraries.options.length; i++) {
+                    libraries.options[i].selected = selected.indexOf(libraries.options[i].value) !== -1;
+                }
+            }
+
+            function captureUserSettings() {
+                if (!currentUserId) {
+                    return;
+                }
+
+                var user = findUser(currentUserId);
+                if (!user) {
+                    user = defaultUser(currentUserId);
+                    config.UserConfigurations = (config.UserConfigurations || []).concat([user]);
+                }
+
+                user.AccessToken = page.querySelector('#AccessToken').value.trim();
+                user.ScrobbleEnabled = page.querySelector('#ScrobbleEnabled').checked;
+                user.MinimumPlayedPercentage = parseInt(page.querySelector('#MinimumPlayedPercentage').value, 10) || 85;
+                user.ScrobbleOnManualMarkPlayed = page.querySelector('#ScrobbleOnManualMarkPlayed').checked;
+                user.ScrobbleMovies = page.querySelector('#ScrobbleMovies').checked;
+
+                var libraries = page.querySelector('#Libraries');
+                var ids = [];
+                for (var i = 0; i < libraries.options.length; i++) {
+                    if (libraries.options[i].selected) {
+                        ids.push(libraries.options[i].value);
+                    }
+                }
+                user.LibraryIds = ids;
+            }
+
+            function renderMappings() {
+                var body = page.querySelector('#MappingRows');
+                body.innerHTML = '';
+
+                (config.Mappings || []).forEach(function (mapping, index) {
+                    var row = document.createElement('tr');
+                    row.innerHTML =
+                        '<td><input is="emby-input" type="text" class="mapItemId" value=""></td>' +
+                        '<td><input is="emby-input" type="text" class="mapName" value=""></td>' +
+                        '<td><input is="emby-input" type="number" class="mapAniListId" value=""></td>' +
+                        '<td><input is="emby-input" type="number" class="mapOffset" value=""></td>' +
+                        '<td><button is="emby-button" type="button" class="raised removeMapping">Remove</button></td>';
+
+                    row.querySelector('.mapItemId').value = mapping.JellyfinItemId || '';
+                    row.querySelector('.mapName').value = mapping.DisplayName || '';
+                    row.querySelector('.mapAniListId').value = mapping.AniListMediaId || 0;
+                    row.querySelector('.mapOffset').value = mapping.EpisodeOffset || 0;
+
+                    row.querySelector('.removeMapping').addEventListener('click', function () {
+                        captureMappings();
+                        config.Mappings.splice(index, 1);
+                        renderMappings();
+                    });
+
+                    body.appendChild(row);
+                });
+            }
+
+            function captureMappings() {
+                var rows = page.querySelectorAll('#MappingRows tr');
+                var mappings = [];
+
+                for (var i = 0; i < rows.length; i++) {
+                    var itemId = rows[i].querySelector('.mapItemId').value.trim();
+                    var aniListId = parseInt(rows[i].querySelector('.mapAniListId').value, 10) || 0;
+
+                    if (!itemId || !aniListId) {
+                        continue;
+                    }
+
+                    mappings.push({
+                        JellyfinItemId: itemId,
+                        DisplayName: rows[i].querySelector('.mapName').value.trim(),
+                        AniListMediaId: aniListId,
+                        EpisodeOffset: parseInt(rows[i].querySelector('.mapOffset').value, 10) || 0
+                    });
+                }
+
+                config.Mappings = mappings;
+            }
+
+            function updateAuthorizeLink() {
+                var clientId = page.querySelector('#ClientId').value.trim();
+                var link = page.querySelector('#AuthorizeLink');
+
+                link.href = clientId
+                    ? 'https://anilist.co/api/v2/oauth/authorize?client_id=' + encodeURIComponent(clientId) + '&response_type=code'
+                    : 'https://anilist.co/settings/developer';
+            }
+
+            function loadConfig() {
+                return ApiClient.getPluginConfiguration(pluginId).then(function (loaded) {
+                    config = loaded;
+
+                    page.querySelector('#ClientId').value = config.ClientId || '';
+                    page.querySelector('#ClientSecret').value = config.ClientSecret || '';
+                    page.querySelector('#RequestsPerMinute').value = config.RequestsPerMinute;
+                    page.querySelector('#MaxRetryAttempts').value = config.MaxRetryAttempts;
+                    page.querySelector('#EnableIdMappingDatabase').checked = !!config.EnableIdMappingDatabase;
+                    page.querySelector('#EnableTitleSearchFallback').checked = !!config.EnableTitleSearchFallback;
+                    page.querySelector('#TitleSearchMinimumSimilarity').value = config.TitleSearchMinimumSimilarity;
+                    page.querySelector('#VerboseLogging').checked = !!config.VerboseLogging;
+
+                    updateAuthorizeLink();
+                    renderMappings();
+                });
+            }
+
+            function loadUsers() {
+                return ApiClient.getUsers().then(function (users) {
+                    var select = page.querySelector('#JellyfinUser');
+                    select.innerHTML = users.map(function (user) {
+                        return '<option value="' + user.Id + '">' + user.Name + '</option>';
+                    }).join('');
+
+                    currentUserId = users.length ? users[0].Id : null;
+                });
+            }
+
+            function loadLibraries() {
+                return ApiClient.getVirtualFolders().then(function (folders) {
+                    page.querySelector('#Libraries').innerHTML = folders.map(function (folder) {
+                        return '<option value="' + folder.ItemId + '">' + folder.Name + '</option>';
+                    }).join('');
+                });
+            }
+
+            document.querySelector('#AniListScrobblerConfigPage').addEventListener('pageshow', function () {
+                page = this;
+                Dashboard.showLoadingMsg();
+
+                Promise.all([loadUsers(), loadLibraries()])
+                    .then(loadConfig)
+                    .then(function () {
+                        loadUserSettings(currentUserId);
+                        Dashboard.hideLoadingMsg();
+                    })
+                    .catch(function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Could not load the AniList Scrobbler configuration.');
+                    });
+
+                page.querySelector('#JellyfinUser').addEventListener('change', function () {
+                    captureUserSettings();
+                    currentUserId = this.value;
+                    loadUserSettings(currentUserId);
+                });
+
+                page.querySelector('#ClientId').addEventListener('input', updateAuthorizeLink);
+
+                page.querySelector('#AddMapping').addEventListener('click', function () {
+                    captureMappings();
+                    config.Mappings = (config.Mappings || []).concat([{
+                        JellyfinItemId: '',
+                        DisplayName: '',
+                        AniListMediaId: 0,
+                        EpisodeOffset: 0
+                    }]);
+                    renderMappings();
+                });
+
+                page.querySelector('#ValidateToken').addEventListener('click', function () {
+                    var token = page.querySelector('#AccessToken').value.trim();
+                    if (!token) {
+                        Dashboard.alert('Paste an access token first.');
+                        return;
+                    }
+
+                    Dashboard.showLoadingMsg();
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('AniListScrobbler/ValidateToken'),
+                        data: JSON.stringify({ AccessToken: token }),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    }).then(function (result) {
+                        Dashboard.hideLoadingMsg();
+
+                        var user = findUser(currentUserId) || defaultUser(currentUserId);
+                        if (!findUser(currentUserId)) {
+                            config.UserConfigurations = (config.UserConfigurations || []).concat([user]);
+                        }
+
+                        user.AniListUserName = result.UserName;
+                        user.AniListUserId = result.UserId;
+                        page.querySelector('#LinkedAs').textContent = 'Linked as ' + result.UserName + '. Save to keep it.';
+                    }).catch(function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('AniList did not accept that token.');
+                    });
+                });
+
+                page.querySelector('#ExchangeCode').addEventListener('click', function () {
+                    var code = page.querySelector('#AuthCode').value.trim();
+                    if (!code) {
+                        Dashboard.alert('Paste the PIN from AniList first.');
+                        return;
+                    }
+
+                    Dashboard.showLoadingMsg();
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('AniListScrobbler/ExchangeCode'),
+                        data: JSON.stringify({ Code: code, RedirectUri: 'https://anilist.co/api/v2/oauth/pin' }),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    }).then(function (result) {
+                        Dashboard.hideLoadingMsg();
+                        page.querySelector('#AccessToken').value = result.AccessToken;
+                        Dashboard.alert('Token received. Check it, then save.');
+                    }).catch(function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('AniList refused the PIN. Save the client id and secret first, then try again.');
+                    });
+                });
+
+                page.querySelector('#AniListScrobblerConfigForm').addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    Dashboard.showLoadingMsg();
+
+                    captureUserSettings();
+                    captureMappings();
+
+                    config.ClientId = page.querySelector('#ClientId').value.trim();
+                    config.ClientSecret = page.querySelector('#ClientSecret').value.trim();
+                    config.RequestsPerMinute = parseInt(page.querySelector('#RequestsPerMinute').value, 10) || 30;
+                    config.MaxRetryAttempts = parseInt(page.querySelector('#MaxRetryAttempts').value, 10) || 0;
+                    config.EnableIdMappingDatabase = page.querySelector('#EnableIdMappingDatabase').checked;
+                    config.EnableTitleSearchFallback = page.querySelector('#EnableTitleSearchFallback').checked;
+                    config.TitleSearchMinimumSimilarity = parseFloat(page.querySelector('#TitleSearchMinimumSimilarity').value) || 0.85;
+                    config.VerboseLogging = page.querySelector('#VerboseLogging').checked;
+
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+
+                    return false;
+                });
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

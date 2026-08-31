@@ -1,0 +1,22 @@
+<Project>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <NoWarn>$(NoWarn);CA1848;CA2254</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>AniList Scrobbler for Jellyfin</Product>
+    <Company>grant</Company>
+    <Copyright>Copyright © 2026 Grant Stannard</Copyright>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <RepositoryUrl>https://git.grantstannard.com/gstannard/jellyfin-plugin-anilist-scrobbler</RepositoryUrl>
+  </PropertyGroup>
+
+</Project>

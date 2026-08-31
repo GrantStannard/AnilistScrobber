@@ -1,0 +1,25 @@
+# Build output
+bin/
+obj/
+artifacts/
+*.user
+*.suo
+*.userprefs
+
+# Rider / VS / VS Code
+.idea/
+.vs/
+.vscode/
+
+# Test output
+TestResults/
+coverage*.xml
+*.trx
+
+# Packaging
+*.zip
+*.nupkg
+
+# OS
+.DS_Store
+Thumbs.db

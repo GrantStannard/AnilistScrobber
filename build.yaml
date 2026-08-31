@@ -1,0 +1,19 @@
+---
+name: "AniList Scrobbler"
+guid: "7254b521-24ce-4fb9-b8aa-ec40010a3f96"
+version: "1.0.0.0"
+targetAbi: "10.11.0.0"
+framework: "net9.0"
+owner: "grant"
+overview: "Track anime watching in Jellyfin and log it to AniList."
+description: >
+  Watches Jellyfin playback and updates your AniList list as you go. Each Jellyfin user links
+  their own AniList account. Episodes are matched by AniList, MyAnimeList or AniDB id, with a
+  title search as a fallback, and progress is only ever moved forward.
+category: "General"
+artifacts:
+  - "Jellyfin.Plugin.AniListScrobbler.dll"
+changelog: >
+  ### 1.0.0
+
+  - Initial release: episode and film scrobbling to AniList.
