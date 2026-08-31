@@ -72,10 +72,15 @@ public sealed class PlaybackWatcher : IHostedService, IDisposable
 
     /// <summary>
     /// Decides whether a stopped playback counts as watched.
+    ///
+    /// Whenever the timings are known the configured threshold is the only gate, so it can be
+    /// set stricter than Jellyfin's own completion rule. Jellyfin marks an item played past
+    /// MaxResumePct (90% by default); deferring to that flag first would silently cap the
+    /// threshold at 90 and make any higher value do nothing.
     /// </summary>
     /// <param name="positionTicks">Where playback stopped.</param>
     /// <param name="runTimeTicks">The item's runtime.</param>
-    /// <param name="playedToCompletion">Whether the client reported the item as finished.</param>
+    /// <param name="playedToCompletion">Whether Jellyfin judged the item finished.</param>
     /// <param name="minimumPercentage">The configured watched threshold.</param>
     /// <returns><c>true</c> when the item should be scrobbled.</returns>
     public static bool IsWatched(
@@ -84,18 +89,16 @@ public sealed class PlaybackWatcher : IHostedService, IDisposable
         bool playedToCompletion,
         int minimumPercentage)
     {
-        if (playedToCompletion)
+        if (positionTicks is { } position && runTimeTicks is { } runtime && runtime > 0)
         {
-            return true;
+            var percentage = (double)position / runtime * 100.0;
+            return percentage >= minimumPercentage;
         }
 
-        if (positionTicks is not { } position || runTimeTicks is not { } runtime || runtime <= 0)
-        {
-            return false;
-        }
-
-        var percentage = (double)position / runtime * 100.0;
-        return percentage >= minimumPercentage;
+        // Nothing to measure: a client that reported no position, or an item with no known
+        // runtime. Jellyfin treats both as finished and marks the item played, so agreeing
+        // with it keeps AniList and the Jellyfin library from disagreeing.
+        return playedToCompletion;
     }
 
     private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
@@ -139,9 +142,10 @@ public sealed class PlaybackWatcher : IHostedService, IDisposable
             return;
         }
 
-        // PlaybackFinished duplicates the session event and is deduplicated downstream; the
-        // manual toggle is the case that the session events never cover.
-        if (e.SaveReason is not (UserDataSaveReason.TogglePlayed or UserDataSaveReason.PlaybackFinished))
+        // Only the manual toggle is handled here. PlaybackFinished is raised by Jellyfin on
+        // the same 90% rule as PlayedToCompletion, so acting on it would re-introduce the cap
+        // that IsWatched exists to avoid; PlaybackStopped already covers real playback.
+        if (e.SaveReason is not UserDataSaveReason.TogglePlayed)
         {
             return;
         }
@@ -157,7 +161,7 @@ public sealed class PlaybackWatcher : IHostedService, IDisposable
             return;
         }
 
-        if (e.SaveReason == UserDataSaveReason.TogglePlayed && !userConfiguration.ScrobbleOnManualMarkPlayed)
+        if (!userConfiguration.ScrobbleOnManualMarkPlayed)
         {
             return;
         }

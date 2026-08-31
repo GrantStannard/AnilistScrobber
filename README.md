@@ -20,6 +20,29 @@ Built against **Jellyfin 10.11** (`net9.0`).
 This is a one-way scrobbler: Jellyfin to AniList. It does not pull AniList progress back into
 Jellyfin, and it does not sync ratings.
 
+## When an episode counts as watched
+
+Two things can trigger a scrobble.
+
+**Playback stopping.** Jellyfin reports where you stopped, and the plugin compares that against
+the runtime. Past the threshold, it scrobbles.
+
+The threshold is the only gate whenever the timings are known, deliberately: Jellyfin has its
+own completion rule (`MaxResumePct`, 90% by default) and deferring to that first would cap the
+setting, so anything above 90 would quietly do nothing. Setting 95 here really does mean 95,
+whether or not Jellyfin considers the episode played.
+
+If the timings are not known — a client that reports no position, or an item with no runtime —
+there is nothing to measure, so the plugin follows Jellyfin's own judgement. Jellyfin marks
+those played, and disagreeing would leave AniList behind your library.
+
+**Marking something played by hand.** Toggling an episode watched in the Jellyfin UI scrobbles
+it, if that option is on. Only the manual toggle is handled here; playback itself is covered
+above.
+
+A normal watch can raise both signals, so a repeat scrobble of the same episode by the same
+user within a minute is dropped.
+
 ## How episodes are matched
 
 AniList models each season and cour as its own entry, while Jellyfin models a show as one
