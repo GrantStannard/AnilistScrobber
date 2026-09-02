@@ -129,6 +129,40 @@ public class AniListClientTests
     }
 
     [Fact]
+    public async Task ApiDisabledOutage_IsTransientNotAnAuthFailure()
+    {
+        // The exact payload AniList served during an outage. Reporting this as a rejected
+        // token sends the user to re-link an account that is fine, and stops the retry.
+        const string Body =
+            "{\"errors\":[{\"message\":\"The AniList API has been temporarily disabled due to "
+            + "severe stability issues.\",\"status\":403}]}";
+
+        using var factory = new StubHttpClientFactory(
+            StubHttpClientFactory.Json(Body, HttpStatusCode.Forbidden));
+        using var client = Create(factory);
+
+        var exception = await Assert.ThrowsAsync<AniListException>(
+            () => client.GetViewerAsync("perfectly-good-token", CancellationToken.None));
+
+        Assert.True(exception.IsTransient);
+        Assert.False(exception.IsAuthenticationFailure);
+    }
+
+    [Fact]
+    public async Task ForbiddenWithAnAuthMessage_IsStillAnAuthFailure()
+    {
+        using var factory = new StubHttpClientFactory(
+            StubHttpClientFactory.Json("{\"errors\":[{\"message\":\"Unauthorized.\"}]}", HttpStatusCode.Forbidden));
+        using var client = Create(factory);
+
+        var exception = await Assert.ThrowsAsync<AniListException>(
+            () => client.GetViewerAsync("bad", CancellationToken.None));
+
+        Assert.True(exception.IsAuthenticationFailure);
+        Assert.False(exception.IsTransient);
+    }
+
+    [Fact]
     public async Task Unauthorized_ThrowsAuthenticationFailure()
     {
         using var factory = new StubHttpClientFactory(

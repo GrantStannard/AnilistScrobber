@@ -27,6 +27,7 @@ public sealed class AnimeMatcher : IAnimeMatcher
     private static readonly string[] _aniListKeys = { "AniList", "Anilist", "AniListId" };
     private static readonly string[] _malKeys = { "MyAnimeList", "Mal", "MyAnimeListId" };
     private static readonly string[] _aniDbKeys = { "AniDB", "Anidb", "AniDB_Series", "AnidbId" };
+    private static readonly string[] _tvdbKeys = { "Tvdb", "TheTVDB", "TvdbId" };
 
     private readonly IAniListClient _aniListClient;
     private readonly IIdMappingProvider _idMappingProvider;
@@ -163,6 +164,29 @@ public sealed class AnimeMatcher : IAnimeMatcher
                 : null;
         }
 
+        // The id mapping database pins AniList entries to a TheTVDB series *and season*, which
+        // names the season's own entry outright. That beats resolving the series and walking
+        // the sequel chain: the chain breaks whenever AniList links two seasons by anything
+        // other than a TV-to-TV sequel edge, and it cannot recover when the series id happens
+        // to name a later season rather than the first.
+        var fromTvdb = await ResolveFromTvdbSeasonAsync(
+            series,
+            seasonNumber,
+            cancellationToken).ConfigureAwait(false);
+
+        if (fromTvdb is not null)
+        {
+            if (await VerifyAsync(episode, fromTvdb, accessToken, cancellationToken).ConfigureAwait(false))
+            {
+                return fromTvdb;
+            }
+
+            _logger.LogDebug(
+                "TheTVDB season mapping for {Series} S{Season} failed verification, trying other ids",
+                series?.Name ?? episode.SeriesName,
+                seasonNumber);
+        }
+
         var fromSeries = await ResolveFromProviderIdsAsync(series, accessToken, cancellationToken).ConfigureAwait(false);
         if (fromSeries is not null)
         {
@@ -247,6 +271,38 @@ public sealed class AnimeMatcher : IAnimeMatcher
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves a season through the TheTVDB series id and season number.
+    /// </summary>
+    /// <param name="series">The Jellyfin series.</param>
+    /// <param name="seasonNumber">The season number.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The match, or <c>null</c> when the pair is not in the mapping database.</returns>
+    private async Task<AnimeMatch?> ResolveFromTvdbSeasonAsync(
+        BaseItem? series,
+        int seasonNumber,
+        CancellationToken cancellationToken)
+    {
+        var tvdbId = GetProviderId(series, _tvdbKeys);
+        if (tvdbId is null)
+        {
+            return null;
+        }
+
+        var candidates = await _idMappingProvider
+            .GetAniListIdsFromTvdbSeasonAsync(tvdbId.Value, seasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        // A season split across two cours maps to two entries. The first covers the opening
+        // episodes; the overflow walk carries later ones into the second.
+        return new AnimeMatch(candidates[0], 0, MatchSource.TvdbSeason);
     }
 
     private async Task<AnimeMatch?> ResolveFromProviderIdsAsync(

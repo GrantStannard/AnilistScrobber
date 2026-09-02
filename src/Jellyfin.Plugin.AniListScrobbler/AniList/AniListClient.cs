@@ -125,6 +125,18 @@ public sealed class AniListClient : IAniListClient, IDisposable
         return delay is { } value && value > TimeSpan.Zero ? value : fallback;
     }
 
+    /// <summary>
+    /// Whether a status code describes a condition that may clear on its own. Forbidden is
+    /// included because AniList uses it to report the whole API being disabled, not just
+    /// permission problems; an actual bad token is recognised from the error payload instead.
+    /// </summary>
+    /// <param name="status">The response status.</param>
+    /// <returns><c>true</c> when a later retry may succeed.</returns>
+    private static bool IsTransientStatus(HttpStatusCode status)
+        => (int)status >= 500
+            || status == HttpStatusCode.Forbidden
+            || status == HttpStatusCode.RequestTimeout;
+
     private static T? Deserialize<T>(JsonElement? data, string property)
         where T : class
     {
@@ -191,7 +203,11 @@ public sealed class AniListClient : IAniListClient, IDisposable
                 };
             }
 
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            // 401 is unambiguous. 403 is not: AniList answers with one, plus an explanatory
+            // errors payload, when the API is disabled during an outage. Deciding that from
+            // the status alone would report a perfectly good token as rejected and, because
+            // an authentication failure is not retried, give up for the whole outage.
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 throw new AniListException("AniList rejected the access token.") { IsAuthenticationFailure = true };
             }
@@ -203,7 +219,7 @@ public sealed class AniListClient : IAniListClient, IDisposable
                 throw new AniListException(
                     string.Create(CultureInfo.InvariantCulture, $"AniList returned {(int)response.StatusCode}."))
                 {
-                    IsTransient = (int)response.StatusCode >= 500,
+                    IsTransient = IsTransientStatus(response.StatusCode),
                 };
             }
 
@@ -232,11 +248,14 @@ public sealed class AniListClient : IAniListClient, IDisposable
                     return null;
                 }
 
+                var isAuthenticationFailure =
+                    message.Contains("Invalid token", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase);
+
                 throw new AniListException($"AniList error: {message}")
                 {
-                    IsTransient = (int)response.StatusCode >= 500,
-                    IsAuthenticationFailure = message.Contains("Invalid token", StringComparison.OrdinalIgnoreCase)
-                        || message.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase),
+                    IsTransient = !isAuthenticationFailure && IsTransientStatus(response.StatusCode),
+                    IsAuthenticationFailure = isAuthenticationFailure,
                 };
             }
 

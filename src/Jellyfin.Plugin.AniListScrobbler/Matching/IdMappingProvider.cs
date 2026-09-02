@@ -32,6 +32,7 @@ public sealed class IdMappingProvider : IIdMappingProvider, IDisposable
 
     private Dictionary<int, int>? _aniDbToAniList;
     private Dictionary<int, int>? _malToAniList;
+    private Dictionary<(int TvdbId, int Season), List<int>>? _tvdbSeasonToAniList;
     private DateTimeOffset _loadedAt = DateTimeOffset.MinValue;
 
     /// <summary>
@@ -50,6 +51,20 @@ public sealed class IdMappingProvider : IIdMappingProvider, IDisposable
     {
         await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
         return _aniDbToAniList is not null && _aniDbToAniList.TryGetValue(aniDbId, out var id) ? id : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<int>> GetAniListIdsFromTvdbSeasonAsync(
+        int tvdbId,
+        int seasonNumber,
+        CancellationToken cancellationToken)
+    {
+        await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return _tvdbSeasonToAniList is not null
+            && _tvdbSeasonToAniList.TryGetValue((tvdbId, seasonNumber), out var ids)
+                ? ids
+                : Array.Empty<int>();
     }
 
     /// <inheritdoc />
@@ -110,6 +125,7 @@ public sealed class IdMappingProvider : IIdMappingProvider, IDisposable
             _loadedAt = DateTimeOffset.UtcNow;
             _aniDbToAniList ??= new Dictionary<int, int>();
             _malToAniList ??= new Dictionary<int, int>();
+            _tvdbSeasonToAniList ??= new Dictionary<(int TvdbId, int Season), List<int>>();
         }
         finally
         {
@@ -144,48 +160,100 @@ public sealed class IdMappingProvider : IIdMappingProvider, IDisposable
         File.Move(temporaryPath, path, overwrite: true);
     }
 
-    private void Parse(string path)
+    /// <summary>
+    /// The three indexes built from the dataset.
+    /// </summary>
+    /// <param name="AniDbToAniList">AniDB id to AniList id.</param>
+    /// <param name="MalToAniList">MyAnimeList id to AniList id.</param>
+    /// <param name="TvdbSeasonToAniList">TheTVDB series id and season to AniList ids.</param>
+    internal sealed record Indexes(
+        Dictionary<int, int> AniDbToAniList,
+        Dictionary<int, int> MalToAniList,
+        Dictionary<(int TvdbId, int Season), List<int>> TvdbSeasonToAniList);
+
+    /// <summary>
+    /// Builds the lookup indexes from the raw dataset.
+    /// </summary>
+    /// <param name="stream">The dataset JSON.</param>
+    /// <returns>The indexes.</returns>
+    internal static Indexes BuildIndexes(Stream stream)
     {
         var aniDb = new Dictionary<int, int>();
         var mal = new Dictionary<int, int>();
+        var tvdbSeason = new Dictionary<(int TvdbId, int Season), List<int>>();
 
-        using (var stream = File.OpenRead(path))
+        using var document = JsonDocument.Parse(stream);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
         {
-            using var document = JsonDocument.Parse(stream);
-            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("The id mapping dataset was not a JSON array.");
+        }
+
+        foreach (var entry in document.RootElement.EnumerateArray())
+        {
+            if (!TryReadId(entry, "anilist_id", out var aniListId))
             {
-                throw new InvalidDataException("The id mapping dataset was not a JSON array.");
+                continue;
             }
 
-            foreach (var entry in document.RootElement.EnumerateArray())
+            // The dataset holds one row per AniList entry, so first write wins and later
+            // duplicates (alternate cuts of the same show) are ignored.
+            if (TryReadId(entry, "anidb_id", out var aniDbId))
             {
-                if (!TryReadId(entry, "anilist_id", out var aniListId))
+                aniDb.TryAdd(aniDbId, aniListId);
+            }
+
+            if (TryReadId(entry, "mal_id", out var malId))
+            {
+                mal.TryAdd(malId, aniListId);
+            }
+
+            // The dataset also pins each entry to a TheTVDB series and season, which is the
+            // only signal that survives a library whose seasons carry no anime ids.
+            if (TryReadId(entry, "tvdb_id", out var tvdbId)
+                && entry.TryGetProperty("season", out var season)
+                && TryReadId(season, "tvdb", out var seasonNumber))
+            {
+                if (!tvdbSeason.TryGetValue((tvdbId, seasonNumber), out var list))
                 {
-                    continue;
+                    list = new List<int>();
+                    tvdbSeason[(tvdbId, seasonNumber)] = list;
                 }
 
-                // The dataset holds one row per AniList entry, so first write wins and later
-                // duplicates (alternate cuts of the same show) are ignored.
-                if (TryReadId(entry, "anidb_id", out var aniDbId))
+                if (!list.Contains(aniListId))
                 {
-                    aniDb.TryAdd(aniDbId, aniListId);
-                }
-
-                if (TryReadId(entry, "mal_id", out var malId))
-                {
-                    mal.TryAdd(malId, aniListId);
+                    list.Add(aniListId);
                 }
             }
         }
 
-        _aniDbToAniList = aniDb;
-        _malToAniList = mal;
+        // Ascending AniList id tracks broadcast order closely enough to put a split cour's
+        // first half before its second, which is what the overflow walk expects.
+        foreach (var list in tvdbSeason.Values)
+        {
+            list.Sort();
+        }
+
+        return new Indexes(aniDb, mal, tvdbSeason);
+    }
+
+    private void Parse(string path)
+    {
+        Indexes indexes;
+        using (var stream = File.OpenRead(path))
+        {
+            indexes = BuildIndexes(stream);
+        }
+
+        _aniDbToAniList = indexes.AniDbToAniList;
+        _malToAniList = indexes.MalToAniList;
+        _tvdbSeasonToAniList = indexes.TvdbSeasonToAniList;
         _loadedAt = DateTimeOffset.UtcNow;
 
         _logger.LogInformation(
-            "Loaded id mappings: {AniDbCount} AniDB and {MalCount} MyAnimeList entries",
-            aniDb.Count,
-            mal.Count);
+            "Loaded id mappings: {AniDbCount} AniDB, {MalCount} MyAnimeList and {TvdbCount} TheTVDB season entries",
+            indexes.AniDbToAniList.Count,
+            indexes.MalToAniList.Count,
+            indexes.TvdbSeasonToAniList.Count);
     }
 
     private static bool TryReadId(JsonElement entry, string property, out int value)

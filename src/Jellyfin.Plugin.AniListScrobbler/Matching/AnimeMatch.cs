@@ -17,6 +17,9 @@ public enum MatchSource
     /// <summary>An AniDB id resolved through the id mapping database.</summary>
     AniDbId,
 
+    /// <summary>A TheTVDB series id and season number resolved through the mapping database.</summary>
+    TvdbSeason,
+
     /// <summary>A title search against AniList.</summary>
     TitleSearch,
 }

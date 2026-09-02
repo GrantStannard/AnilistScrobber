@@ -51,15 +51,27 @@ that works:
 
 1. **A manual mapping** for the season, then for the series.
 2. **An AniList id** on the season, then on the series.
-3. **A MyAnimeList id**, resolved through AniList directly.
-4. **An AniDB id**, resolved through the [Fribb/anime-lists](https://github.com/Fribb/anime-lists)
-   mapping database. AniList's API cannot resolve AniDB ids itself, so libraries built by the
-   AniDB provider or Shoko need this table. It is downloaded once and refreshed weekly.
-5. **A title search**, accepted only above a configurable similarity threshold.
+3. **The series' TheTVDB id together with the season number**, resolved through the
+   [Fribb/anime-lists](https://github.com/Fribb/anime-lists) mapping database. That dataset
+   pins each AniList entry to a TheTVDB series *and season*, so it names the season's own
+   entry outright.
+4. **A MyAnimeList id**, resolved through AniList directly.
+5. **An AniDB id**, resolved through the same mapping database. AniList's API cannot resolve
+   AniDB ids itself, so libraries built by the AniDB provider or Shoko need this table.
+6. **A title search**, accepted only above a configurable similarity threshold.
 
-When only the series carries an id, that id names the *first* AniList entry. Later seasons are
-reached by following the AniList `SEQUEL` relation, so season 3 in Jellyfin lands on the third
-entry in the chain rather than overwriting season 1.
+The mapping database is downloaded once and refreshed weekly.
+
+The TheTVDB season lookup matters more than its position in the list suggests. Anime libraries
+routinely tag the *series* but leave seasons untagged, and a series id names only the first
+AniList entry. Reaching season 3 from it means walking the AniList `SEQUEL` relation twice,
+which fails whenever two seasons are linked by anything other than a TV-to-TV sequel edge, and
+cannot recover at all when the series id happens to name a later season rather than the first.
+Looking the season up directly sidesteps both. The sequel walk is still there as the fallback
+for libraries with no TheTVDB ids.
+
+Where a season is split across two cours the lookup returns both entries; the first is used and
+the overflow rule below carries later episodes into the second.
 
 Libraries numbered continuously across seasons are handled the same way: an episode that runs
 past the end of one entry continues into its sequel, and the corrected mapping is cached so the
