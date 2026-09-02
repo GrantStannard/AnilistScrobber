@@ -158,12 +158,21 @@ public sealed class AnimeMatcher : IAnimeMatcher
         var direct = await ResolveFromProviderIdsAsync(season, accessToken, cancellationToken).ConfigureAwait(false);
         if (direct is not null)
         {
-            return direct;
+            return await VerifyAsync(episode, direct, accessToken, cancellationToken).ConfigureAwait(false)
+                ? direct
+                : null;
         }
 
         var fromSeries = await ResolveFromProviderIdsAsync(series, accessToken, cancellationToken).ConfigureAwait(false);
         if (fromSeries is not null)
         {
+            // Verify the entry the id names, before following any sequel chain: later seasons
+            // carry titles like "... 2nd Season" that would not compare cleanly.
+            if (!await VerifyAsync(episode, fromSeries, accessToken, cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
             // The series id names the first entry; later seasons are separate AniList entries
             // reachable by following the sequel chain.
             if (seasonNumber <= 1)
@@ -222,7 +231,9 @@ public sealed class AnimeMatcher : IAnimeMatcher
         var direct = await ResolveFromProviderIdsAsync(item, accessToken, cancellationToken).ConfigureAwait(false);
         if (direct is not null)
         {
-            return direct;
+            return await VerifyAsync(item, direct, accessToken, cancellationToken).ConfigureAwait(false)
+                ? direct
+                : null;
         }
 
         if (configuration?.EnableTitleSearchFallback == true)
@@ -292,6 +303,115 @@ public sealed class AnimeMatcher : IAnimeMatcher
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Checks that the AniList entry an id resolved to actually looks like the item in hand.
+    ///
+    /// Both halves of the comparison can be wrong on their own: a library's display name may
+    /// come from a bad metadata match while the folder is named correctly, or the reverse. The
+    /// best score across both is used, so either one being right is enough.
+    /// </summary>
+    /// <param name="item">The Jellyfin item being scrobbled.</param>
+    /// <param name="match">The candidate match.</param>
+    /// <param name="accessToken">The AniList access token.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns><c>true</c> when the match is trustworthy.</returns>
+    private async Task<bool> VerifyAsync(
+        BaseItem item,
+        AnimeMatch match,
+        string accessToken,
+        CancellationToken cancellationToken)
+    {
+        var configuration = Plugin.Instance?.Configuration;
+
+        // A manual mapping is an explicit instruction and is never second-guessed.
+        if (configuration is null
+            || !configuration.VerifyTitleMatch
+            || match.Source == MatchSource.ManualMapping)
+        {
+            return true;
+        }
+
+        var media = await _aniListClient
+            .GetMediaAsync(match.MediaId, accessToken, includeRelations: false, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (media is null)
+        {
+            _logger.LogWarning("AniList has no media {MediaId} for {Item}", match.MediaId, item.Name);
+            return false;
+        }
+
+        var (best, bestTitle) = ScoreTitles(GetLocalTitles(item), media);
+
+        if (best >= configuration.TitleVerificationMinimumSimilarity)
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "Refusing to scrobble \"{Item}\": its {Source} points at AniList {MediaId} \"{Candidate}\", "
+            + "which only matches at {Score:P0}. Add a manual mapping if this is correct.",
+            item.Name,
+            match.Source,
+            match.MediaId,
+            bestTitle ?? media.DisplayTitle,
+            best);
+
+        return false;
+    }
+
+    /// <summary>
+    /// Scores every local name against every title AniList holds, keeping the best pair.
+    /// </summary>
+    /// <param name="localTitles">The names the item is known by locally.</param>
+    /// <param name="media">The candidate AniList entry.</param>
+    /// <returns>The best similarity and the AniList title that produced it.</returns>
+    internal static (double Score, string? Title) ScoreTitles(IEnumerable<string> localTitles, Media media)
+    {
+        var best = 0.0;
+        string? bestTitle = null;
+
+        foreach (var local in localTitles)
+        {
+            foreach (var remote in EnumerateTitles(media))
+            {
+                var score = TitleSimilarity.Compare(local, remote);
+                if (score > best)
+                {
+                    best = score;
+                    bestTitle = remote;
+                }
+            }
+        }
+
+        return (best, bestTitle);
+    }
+
+    /// <summary>
+    /// The names this item is known by locally: its display title and its folder name.
+    /// </summary>
+    /// <param name="item">The Jellyfin item.</param>
+    /// <returns>The candidate local titles.</returns>
+    internal static IEnumerable<string> GetLocalTitles(BaseItem item)
+    {
+        var owner = item is Episode episode ? (BaseItem?)episode.Series ?? episode : item;
+
+        if (!string.IsNullOrWhiteSpace(owner.Name))
+        {
+            yield return owner.Name;
+        }
+
+        var path = owner.Path;
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            var folder = System.IO.Path.GetFileName(path.TrimEnd('/', '\\'));
+            if (!string.IsNullOrWhiteSpace(folder))
+            {
+                yield return folder;
+            }
+        }
     }
 
     private async Task<int?> WalkSequelsAsync(

@@ -121,6 +121,25 @@
                 </div>
 
                 <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="VerifyTitleMatch" />
+                    <span>Check the title before trusting a provider id</span>
+                </label>
+                <div class="fieldDescription" style="margin-bottom:1em">
+                    Libraries sometimes carry an id belonging to a different show, or to a special
+                    or film instead of the series. This compares the AniList entry against both the
+                    item's title and its folder name and refuses the match if neither is close.
+                    Manual mappings are always trusted.
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TitleVerificationMinimumSimilarity">Minimum verification similarity</label>
+                    <input is="emby-input" type="number" id="TitleVerificationMinimumSimilarity" min="0" max="1" step="0.01" />
+                    <div class="fieldDescription">
+                        Between 0 and 1. Set to 0 to accept any provider id without checking.
+                    </div>
+                </div>
+
+                <label class="checkboxContainer">
                     <input is="emby-checkbox" type="checkbox" id="EnableTitleSearchFallback" />
                     <span>Fall back to searching AniList by title</span>
                 </label>
@@ -334,6 +353,8 @@
                     page.querySelector('#MaxRetryAttempts').value = config.MaxRetryAttempts;
                     page.querySelector('#EnableIdMappingDatabase').checked = !!config.EnableIdMappingDatabase;
                     page.querySelector('#EnableTitleSearchFallback').checked = !!config.EnableTitleSearchFallback;
+                    page.querySelector('#VerifyTitleMatch').checked = !!config.VerifyTitleMatch;
+                    page.querySelector('#TitleVerificationMinimumSimilarity').value = config.TitleVerificationMinimumSimilarity;
                     page.querySelector('#TitleSearchMinimumSimilarity').value = config.TitleSearchMinimumSimilarity;
                     page.querySelector('#VerboseLogging').checked = !!config.VerboseLogging;
 
@@ -463,6 +484,8 @@
                     config.MaxRetryAttempts = parseInt(page.querySelector('#MaxRetryAttempts').value, 10) || 0;
                     config.EnableIdMappingDatabase = page.querySelector('#EnableIdMappingDatabase').checked;
                     config.EnableTitleSearchFallback = page.querySelector('#EnableTitleSearchFallback').checked;
+                    config.VerifyTitleMatch = page.querySelector('#VerifyTitleMatch').checked;
+                    config.TitleVerificationMinimumSimilarity = parseFloat(page.querySelector('#TitleVerificationMinimumSimilarity').value) || 0;
                     config.TitleSearchMinimumSimilarity = parseFloat(page.querySelector('#TitleSearchMinimumSimilarity').value) || 0.85;
                     config.VerboseLogging = page.querySelector('#VerboseLogging').checked;
 

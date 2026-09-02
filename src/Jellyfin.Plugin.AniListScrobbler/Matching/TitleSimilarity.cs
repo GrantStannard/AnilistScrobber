@@ -22,7 +22,11 @@ public static class TitleSimilarity
             return string.Empty;
         }
 
-        var decomposed = value.Normalize(NormalizationForm.FormD);
+        // Compatibility decomposition, so the typography anime titles are full of folds into
+        // plain characters: "Ranma ½" into "Ranma 1/2", full-width forms into ASCII, ligatures
+        // into letters. Canonical decomposition alone leaves those as single symbols that
+        // char.IsLetterOrDigit then discards, which silently shortens the title.
+        var decomposed = value.Normalize(NormalizationForm.FormKD);
         var builder = new StringBuilder(decomposed.Length);
         var lastWasSpace = true;
 

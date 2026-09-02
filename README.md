@@ -68,6 +68,24 @@ rest of the season skips the lookup.
 Specials (season 0) are never scrobbled automatically, because they do not map onto a numbered
 run without guessing. Add a manual mapping if you want them counted.
 
+### Provider ids are checked before they are trusted
+
+An id on a library item is not proof. In a real 110-series anime library, four shows carried an
+AniDB id belonging to something else entirely — two live-action shows that would have scrobbled
+onto unrelated anime, and two ids pointing at a special or a film rather than the series.
+
+So before anything is written, the AniList entry is compared against **both** the item's title
+and its folder name, and the match is refused unless one of them is close enough (0.80 by
+default). Both halves matter: a library can show the wrong title while the folder is right — a
+folder named `Girlfriend, Girlfriend` displaying as *The Girlfriend Experience* — or the
+reverse. Taking the better of the two keeps a good id from being thrown away over a bad
+display name.
+
+Manual mappings are an explicit instruction and are never checked.
+
+Titles are compared after compatibility normalisation, so `Ranma ½` and `Ranma1/2` compare as
+the same words rather than differing by a character that would otherwise be discarded.
+
 ### When matching gets it wrong
 
 Add a manual mapping in the plugin settings. You need the Jellyfin series or season id — it is

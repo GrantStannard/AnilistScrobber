@@ -56,6 +56,23 @@ public class PluginConfiguration : BasePluginConfiguration
     public int IdMappingRefreshDays { get; set; } = 7;
 
     /// <summary>
+    /// Gets or sets a value indicating whether a match found from a provider id is checked
+    /// against the item's title before anything is written to AniList.
+    ///
+    /// Provider ids are not always trustworthy: a library can carry an AniDB id belonging to
+    /// a completely different show, or one pointing at a special or film rather than the
+    /// series. Without this check those ids scrobble silently onto the wrong AniList entry.
+    /// Manual mappings are always trusted and never verified.
+    /// </summary>
+    public bool VerifyTitleMatch { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the minimum similarity (0-1) between the item's title and the AniList
+    /// entry's titles for a provider id match to be accepted.
+    /// </summary>
+    public double TitleVerificationMinimumSimilarity { get; set; } = 0.80;
+
+    /// <summary>
     /// Gets or sets a value indicating whether titles may be searched on AniList when no
     /// provider id yields a match. Title matching is a heuristic and can mis-identify shows.
     /// </summary>
