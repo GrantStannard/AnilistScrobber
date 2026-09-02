@@ -189,6 +189,24 @@ public sealed class ScrobbleService : IScrobbleService
         (media, progress) = await ResolveOverflowAsync(item, match, media, progress, user, cancellationToken)
             .ConfigureAwait(false);
 
+        // After the sequel walk the episode must fit inside the entry. It can still overrun
+        // when a library numbers one season absolutely while its siblings restart at 1, and
+        // writing a progress the entry cannot hold would corrupt the list.
+        if (media.Episodes is { } episodeCount && episodeCount > 0 && progress > episodeCount)
+        {
+            _logger.LogWarning(
+                "Not scrobbling {Item}: episode {Episode} maps to progress {Progress} on \"{Title}\", "
+                + "which has {Total} episodes. The season is most likely numbered absolutely; "
+                + "add a manual mapping with an episode offset.",
+                item.Name,
+                episodeNumber,
+                progress,
+                media.DisplayTitle,
+                episodeCount);
+
+            return ScrobbleOutcome.NotApplicable;
+        }
+
         var entry = media.MediaListEntry;
         var status = media.Episodes is { } total && total > 0 && progress >= total
             ? MediaListStatus.COMPLETED
