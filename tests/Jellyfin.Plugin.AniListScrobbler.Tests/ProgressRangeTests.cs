@@ -65,3 +65,32 @@ public class ProgressRangeTests
         Assert.True(progress > 12, "an out-of-range progress must remain detectable");
     }
 }
+
+/// <summary>
+/// Which related entries can continue a numbered run.
+/// </summary>
+public class ContinuationFormatTests
+{
+    [Theory]
+    [InlineData("TV")]
+    [InlineData("TV_SHORT")]
+    // "SAKAMOTO DAYS Part 2" is the second half of a 22-episode TheTVDB season and is an ONA.
+    // Excluding ONA stranded every episode past the first cour.
+    [InlineData("ONA")]
+    [InlineData("ona")]
+    public void ContinuationFormats_AreAccepted(string format)
+    {
+        Assert.True(Jellyfin.Plugin.AniListScrobbler.Matching.AnimeMatcher.IsContinuationFormat(format));
+    }
+
+    [Theory]
+    [InlineData("MOVIE")]
+    [InlineData("SPECIAL")]
+    [InlineData("OVA")]
+    [InlineData("MUSIC")]
+    [InlineData(null)]
+    public void SideContentFormats_AreRejected(string? format)
+    {
+        Assert.False(Jellyfin.Plugin.AniListScrobbler.Matching.AnimeMatcher.IsContinuationFormat(format));
+    }
+}

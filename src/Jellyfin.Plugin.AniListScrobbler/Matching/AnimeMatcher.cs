@@ -174,11 +174,16 @@ public sealed class AnimeMatcher : IAnimeMatcher
             seasonNumber,
             cancellationToken).ConfigureAwait(false);
 
-        if (fromTvdb is not null)
+        if (fromTvdb is { } tvdbResult)
         {
-            if (await VerifyAsync(episode, fromTvdb, accessToken, cancellationToken).ConfigureAwait(false))
+            if (await VerifyAsync(
+                    episode,
+                    tvdbResult.Match,
+                    tvdbResult.IdentityMediaId,
+                    accessToken,
+                    cancellationToken).ConfigureAwait(false))
             {
-                return fromTvdb;
+                return tvdbResult.Match;
             }
 
             _logger.LogDebug(
@@ -280,7 +285,7 @@ public sealed class AnimeMatcher : IAnimeMatcher
     /// <param name="seasonNumber">The season number.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The match, or <c>null</c> when the pair is not in the mapping database.</returns>
-    private async Task<AnimeMatch?> ResolveFromTvdbSeasonAsync(
+    private async Task<(AnimeMatch Match, int IdentityMediaId)?> ResolveFromTvdbSeasonAsync(
         BaseItem? series,
         int seasonNumber,
         CancellationToken cancellationToken)
@@ -302,7 +307,29 @@ public sealed class AnimeMatcher : IAnimeMatcher
 
         // A season split across two cours maps to two entries. The first covers the opening
         // episodes; the overflow walk carries later ones into the second.
-        return new AnimeMatch(candidates[0], 0, MatchSource.TvdbSeason);
+        var match = new AnimeMatch(candidates[0], 0, MatchSource.TvdbSeason);
+
+        // Identity is checked against the show's first season, not the matched season. A
+        // later season is a separate AniList entry carrying a suffix or the arc's Japanese
+        // name -- "Kimetsu no Yaiba: Yuukaku-hen" for season 3 of Demon Slayer -- so
+        // comparing it to the series title rejects perfectly correct matches. What needs
+        // checking is that the TheTVDB id belongs to this show at all, and the first season's
+        // entry answers that. A show with no anime entry under that id has no season 1 row
+        // either, so nothing slips through: the lookup simply returns nothing.
+        var identityMediaId = match.MediaId;
+        if (seasonNumber != 1)
+        {
+            var firstSeason = await _idMappingProvider
+                .GetAniListIdsFromTvdbSeasonAsync(tvdbId.Value, 1, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (firstSeason.Count > 0)
+            {
+                identityMediaId = firstSeason[0];
+            }
+        }
+
+        return (match, identityMediaId);
     }
 
     private async Task<AnimeMatch?> ResolveFromProviderIdsAsync(
@@ -373,9 +400,28 @@ public sealed class AnimeMatcher : IAnimeMatcher
     /// <param name="accessToken">The AniList access token.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns><c>true</c> when the match is trustworthy.</returns>
+    private Task<bool> VerifyAsync(
+        BaseItem item,
+        AnimeMatch match,
+        string accessToken,
+        CancellationToken cancellationToken)
+        => VerifyAsync(item, match, match.MediaId, accessToken, cancellationToken);
+
+    /// <summary>
+    /// Checks the match, comparing titles against a nominated entry rather than the matched
+    /// one. They differ when the match names a later season but the show's identity is
+    /// established by its first.
+    /// </summary>
+    /// <param name="item">The Jellyfin item being scrobbled.</param>
+    /// <param name="match">The candidate match.</param>
+    /// <param name="identityMediaId">The entry whose titles identify the show.</param>
+    /// <param name="accessToken">The AniList access token.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns><c>true</c> when the match is trustworthy.</returns>
     private async Task<bool> VerifyAsync(
         BaseItem item,
         AnimeMatch match,
+        int identityMediaId,
         string accessToken,
         CancellationToken cancellationToken)
     {
@@ -390,12 +436,12 @@ public sealed class AnimeMatcher : IAnimeMatcher
         }
 
         var media = await _aniListClient
-            .GetMediaAsync(match.MediaId, accessToken, includeRelations: false, cancellationToken)
+            .GetMediaAsync(identityMediaId, accessToken, includeRelations: false, cancellationToken)
             .ConfigureAwait(false);
 
         if (media is null)
         {
-            _logger.LogWarning("AniList has no media {MediaId} for {Item}", match.MediaId, item.Name);
+            _logger.LogWarning("AniList has no media {MediaId} for {Item}", identityMediaId, item.Name);
             return false;
         }
 
@@ -502,6 +548,19 @@ public sealed class AnimeMatcher : IAnimeMatcher
         return current;
     }
 
+    /// <summary>
+    /// Whether a related entry continues a series' numbered run. Side stories and recaps are
+    /// linked as sequels too, so the format is what separates them -- but ONA has to count:
+    /// streaming continuations such as "SAKAMOTO DAYS Part 2" are ONA, not TV, and excluding
+    /// it strands the second half of a season.
+    /// </summary>
+    /// <param name="format">The AniList media format.</param>
+    /// <returns><c>true</c> when the entry can continue the run.</returns>
+    internal static bool IsContinuationFormat(string? format)
+        => string.Equals(format, "TV", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(format, "TV_SHORT", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(format, "ONA", StringComparison.OrdinalIgnoreCase);
+
     private static int? FindSequel(Media? media)
     {
         var edges = media?.Relations?.Edges;
@@ -518,10 +577,7 @@ public sealed class AnimeMatcher : IAnimeMatcher
                 continue;
             }
 
-            // Side stories and specials share the SEQUEL relation in some cases; only a TV
-            // format entry continues the numbered run of a series.
-            if (string.Equals(edge.Node.Format, "TV", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(edge.Node.Format, "TV_SHORT", StringComparison.OrdinalIgnoreCase))
+            if (IsContinuationFormat(edge.Node.Format))
             {
                 return edge.Node.Id;
             }

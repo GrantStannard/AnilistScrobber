@@ -316,8 +316,7 @@ public sealed class ScrobbleService : IScrobbleService
         {
             if (edge.Node is not null
                 && string.Equals(edge.RelationType, "SEQUEL", StringComparison.OrdinalIgnoreCase)
-                && (string.Equals(edge.Node.Format, "TV", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(edge.Node.Format, "TV_SHORT", StringComparison.OrdinalIgnoreCase)))
+                && AnimeMatcher.IsContinuationFormat(edge.Node.Format))
             {
                 return edge.Node.Id;
             }
