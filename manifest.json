@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "7254b521-24ce-4fb9-b8aa-ec40010a3f96",
+    "name": "AniList Scrobbler",
+    "description": "Watches Jellyfin playback and updates your AniList list as you go. Each Jellyfin user links their own AniList account. Episodes are matched by AniList, MyAnimeList or AniDB id, with a title search as a fallback, and progress is only ever moved forward.",
+    "overview": "Track anime watching in Jellyfin and log it to AniList.",
+    "owner": "grant",
+    "category": "General",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial release: episode and film scrobbling to AniList.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/GrantStannard/AnilistScrobber/releases/download/v1.0.0/jellyfin-plugin-anilist-scrobbler_1.0.0.zip",
+        "checksum": "e1835462f60ed759472984ec1d795b31",
+        "timestamp": "2026-09-04T20:11:50Z"
+      }
+    ]
+  }
+]

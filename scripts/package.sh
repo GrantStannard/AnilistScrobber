@@ -38,15 +38,38 @@ rm -rf "$stage"
 
 checksum="$(md5sum "$out/$zip_name" | cut -d' ' -f1)"
 
-cat > "$out/manifest-fragment.json" <<JSON
-{
-  "version": "${version}.0",
-  "changelog": "See the repository releases.",
-  "targetAbi": "10.11.0.0",
-  "sourceUrl": "https://git.grantstannard.com/gstannard/anilist-scrobber/releases/download/v${version}/${zip_name}",
-  "checksum": "${checksum}",
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Jellyfin fetches a plugin repository anonymously, so the download has to be reachable without
+# credentials. The GitHub mirror carries the releases for that reason; the Forgejo repository
+# itself stays private.
+source_url="https://github.com/GrantStannard/AnilistScrobber/releases/download/v${version}/${zip_name}"
+
+python3 - "$root/manifest.json" "$version" "$checksum" "$source_url" <<'PY'
+import json, pathlib, sys
+from datetime import datetime, timezone
+
+manifest_path = pathlib.Path(sys.argv[1])
+version, checksum, source_url = sys.argv[2:5]
+
+manifest = json.loads(manifest_path.read_text())
+versions = manifest[0]["versions"]
+number = f"{version}.0"
+
+# Rebuilding a version replaces its entry rather than adding a second one with the same number,
+# and keeps whatever changelog was written for it by hand.
+previous = next((v for v in versions if v["version"] == number), None)
+entry = {
+    "version": number,
+    "changelog": previous["changelog"] if previous else "See the repository releases.",
+    "targetAbi": "10.11.0.0",
+    "sourceUrl": source_url,
+    "checksum": checksum,
+    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }
-JSON
+
+# Jellyfin offers the first entry it finds, so the newest build goes at the front.
+manifest[0]["versions"] = [entry] + [v for v in versions if v["version"] != number]
+manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+PY
 
 echo "Packaged $out/$zip_name (md5 $checksum)"
+echo "Updated manifest.json for ${version}.0"
