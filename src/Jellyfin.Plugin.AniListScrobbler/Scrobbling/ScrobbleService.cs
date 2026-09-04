@@ -189,22 +189,42 @@ public sealed class ScrobbleService : IScrobbleService
         (media, progress) = await ResolveOverflowAsync(item, match, media, progress, user, cancellationToken)
             .ConfigureAwait(false);
 
-        // After the sequel walk the episode must fit inside the entry. It can still overrun
-        // when a library numbers one season absolutely while its siblings restart at 1, and
-        // writing a progress the entry cannot hold would corrupt the list.
+        // After the sequel walk the episode must fit inside the entry. When it overruns, the
+        // season-relative reading was wrong: the library numbers this season absolutely while
+        // its siblings restart at 1. Re-read the number from the start of the series before
+        // giving up -- Jujutsu Kaisen stores seasons 1 and 2 as 1..24 and 1..23 but season 3
+        // as 48..59, and counted from the beginning, 59 is episode 12 of the third entry.
         if (media.Episodes is { } episodeCount && episodeCount > 0 && progress > episodeCount)
         {
-            _logger.LogWarning(
-                "Not scrobbling {Item}: episode {Episode} maps to progress {Progress} on \"{Title}\", "
-                + "which has {Total} episodes. The season is most likely numbered absolutely; "
-                + "add a manual mapping with an episode offset.",
-                item.Name,
-                episodeNumber,
-                progress,
-                media.DisplayTitle,
-                episodeCount);
+            var absolute = await TryReadAsAbsoluteAsync(match, episodeNumber, user, cancellationToken)
+                .ConfigureAwait(false);
 
-            return ScrobbleOutcome.NotApplicable;
+            if (absolute is not { } resolved)
+            {
+                _logger.LogWarning(
+                    "Not scrobbling {Item}: episode {Episode} maps to progress {Progress} on \"{Title}\", "
+                    + "which has {Total} episodes, and counting from the start of the series does not "
+                    + "fit either. Add a manual mapping with an episode offset.",
+                    item.Name,
+                    episodeNumber,
+                    progress,
+                    media.DisplayTitle,
+                    episodeCount);
+
+                return ScrobbleOutcome.NotApplicable;
+            }
+
+            _logger.LogInformation(
+                "Episode {Episode} of {Item} does not fit \"{Title}\"; counted from the start of the "
+                + "series it is episode {Progress} of \"{Resolved}\"",
+                episodeNumber,
+                item.Name,
+                media.DisplayTitle,
+                resolved.Progress,
+                resolved.Media.DisplayTitle);
+
+            media = resolved.Media;
+            progress = resolved.Progress;
         }
 
         var entry = media.MediaListEntry;
@@ -242,6 +262,69 @@ public sealed class ScrobbleService : IScrobbleService
             match.Source);
 
         return ScrobbleOutcome.Updated;
+    }
+
+    /// <summary>
+    /// Re-reads an episode number as counting from the first episode of the series, walking
+    /// the sequel chain from the entry the series starts at.
+    /// </summary>
+    /// <param name="match">The match, which carries the series' first entry.</param>
+    /// <param name="episodeNumber">The Jellyfin episode number.</param>
+    /// <param name="user">The user whose token is used.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The entry and progress, or <c>null</c> when it does not fit there either.</returns>
+    private async Task<(Media Media, int Progress)?> TryReadAsAbsoluteAsync(
+        AnimeMatch match,
+        int episodeNumber,
+        UserConfiguration user,
+        CancellationToken cancellationToken)
+    {
+        if (match.BaseMediaId is not { } baseMediaId || match.AbsoluteNumbering)
+        {
+            return null;
+        }
+
+        var current = await _aniListClient
+            .GetMediaAsync(baseMediaId, user.AccessToken, includeRelations: false, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (current is null)
+        {
+            return null;
+        }
+
+        var progress = episodeNumber;
+
+        for (var hop = 0; hop < 16; hop++)
+        {
+            if (current.Episodes is not { } total || total <= 0 || progress <= total)
+            {
+                return progress >= 1 ? (current, progress) : null;
+            }
+
+            var withRelations = await _aniListClient
+                .GetMediaAsync(current.Id, user.AccessToken, includeRelations: true, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (FindSequelId(withRelations) is not { } sequelId)
+            {
+                return null;
+            }
+
+            var sequel = await _aniListClient
+                .GetMediaAsync(sequelId, user.AccessToken, includeRelations: false, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (sequel is null)
+            {
+                return null;
+            }
+
+            progress -= total;
+            current = sequel;
+        }
+
+        return null;
     }
 
     private async Task<(Media Media, int Progress)> ResolveOverflowAsync(

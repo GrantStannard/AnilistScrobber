@@ -147,6 +147,7 @@ public sealed class AnimeMatcher : IAnimeMatcher
         var season = episode.Season;
         var series = episode.Series;
         var seasonNumber = episode.ParentIndexNumber ?? episode.AiredSeasonNumber ?? 1;
+        var episodeNumber = episode.IndexNumber ?? 0;
 
         var configuration = Plugin.Instance?.Configuration;
         var mapping = configuration?.GetMapping(episode.SeasonId, episode.SeriesId);
@@ -206,7 +207,7 @@ public sealed class AnimeMatcher : IAnimeMatcher
             // reachable by following the sequel chain.
             if (seasonNumber <= 1)
             {
-                return fromSeries;
+                return fromSeries with { BaseMediaId = fromSeries.MediaId };
             }
 
             var walked = await WalkSequelsAsync(
@@ -217,6 +218,30 @@ public sealed class AnimeMatcher : IAnimeMatcher
 
             if (walked is null)
             {
+                // The chain does not reach this season. Before giving up, consider that the
+                // library may number episodes absolutely across the whole run, which is how
+                // long-running shows are usually stored: One Piece keeps every episode in one
+                // "season 23" folder numbered 1156 upward, and AniList holds the entire show
+                // as a single entry with no seasons to walk to.
+                if (await IsAbsoluteNumberingAsync(
+                        fromSeries.MediaId,
+                        episodeNumber,
+                        accessToken,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    _logger.LogInformation(
+                        "Reading {Series} episode {Episode} as an absolute number against AniList {MediaId}",
+                        series?.Name ?? episode.SeriesName,
+                        episodeNumber,
+                        fromSeries.MediaId);
+
+                    return fromSeries with
+                    {
+                        BaseMediaId = fromSeries.MediaId,
+                        AbsoluteNumbering = true,
+                    };
+                }
+
                 // Scrobbling season N onto the season 1 entry would silently corrupt the
                 // user's progress, so report no match and let them map it by hand.
                 _logger.LogInformation(
@@ -228,7 +253,7 @@ public sealed class AnimeMatcher : IAnimeMatcher
                 return null;
             }
 
-            return fromSeries with { MediaId = walked.Value };
+            return fromSeries with { MediaId = walked.Value, BaseMediaId = fromSeries.MediaId };
         }
 
         if (configuration?.EnableTitleSearchFallback == true)
@@ -329,7 +354,9 @@ public sealed class AnimeMatcher : IAnimeMatcher
             }
         }
 
-        return (match, identityMediaId);
+        // The first season's entry doubles as the anchor for re-reading an absolutely
+        // numbered episode, so carry it on the match.
+        return (match with { BaseMediaId = identityMediaId }, identityMediaId);
     }
 
     private async Task<AnimeMatch?> ResolveFromProviderIdsAsync(
@@ -514,6 +541,38 @@ public sealed class AnimeMatcher : IAnimeMatcher
                 yield return folder;
             }
         }
+    }
+
+    /// <summary>
+    /// Whether an episode number is too large to be counting from the start of its own
+    /// season, and so must be counting from the start of the series.
+    ///
+    /// The check is deliberately narrow. Reading a season-relative number as absolute would
+    /// put season 2 episode 1 onto season 1, so this only accepts numbers the base entry
+    /// cannot contain, or entries whose length AniList does not publish -- which is the case
+    /// for the long-running shows this exists to serve, still airing and unbounded.
+    /// </summary>
+    /// <param name="baseMediaId">The entry the series starts at.</param>
+    /// <param name="episodeNumber">The Jellyfin episode number.</param>
+    /// <param name="accessToken">The AniList access token.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns><c>true</c> when the number should be read as absolute.</returns>
+    private async Task<bool> IsAbsoluteNumberingAsync(
+        int baseMediaId,
+        int episodeNumber,
+        string accessToken,
+        CancellationToken cancellationToken)
+    {
+        var media = await _aniListClient
+            .GetMediaAsync(baseMediaId, accessToken, includeRelations: false, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (media is null)
+        {
+            return false;
+        }
+
+        return media.Episodes is not { } episodes || episodes <= 0 || episodeNumber > episodes;
     }
 
     private async Task<int?> WalkSequelsAsync(

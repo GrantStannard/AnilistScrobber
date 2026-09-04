@@ -77,6 +77,18 @@ Libraries numbered continuously across seasons are handled the same way: an epis
 past the end of one entry continues into its sequel, and the corrected mapping is cached so the
 rest of the season skips the lookup.
 
+Libraries do not agree on whether an episode number restarts each season, and a single library
+is often inconsistent with itself, so a number that does not fit its season is re-read as
+counting from the first episode of the series:
+
+- Jujutsu Kaisen stored as `1..24`, `1..23`, then `48..59` — episode 59 is episode 12 of the
+  third AniList entry, not progress 59 on a 12-episode one.
+- One Piece keeps every episode in a single "season 23" folder numbered from 1156, and AniList
+  holds the whole show as one still-airing entry with no seasons to walk to at all.
+
+The re-read is only tried when the number cannot be counting from the start of its own season,
+so an ordinary season 2 episode 1 is never mistaken for season 1.
+
 Specials (season 0) are never scrobbled automatically, because they do not map onto a numbered
 run without guessing. Add a manual mapping if you want them counted.
 
